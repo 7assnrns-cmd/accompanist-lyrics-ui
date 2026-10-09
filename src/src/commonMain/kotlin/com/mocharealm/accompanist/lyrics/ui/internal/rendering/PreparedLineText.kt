@@ -25,6 +25,37 @@ import com.mocharealm.accompanist.lyrics.ui.internal.diagnostics.setLyricsTraceC
 import com.mocharealm.accompanist.lyrics.ui.internal.playback.LyricsPlaybackState
 import com.mocharealm.accompanist.lyrics.ui.preparation.PreparedLine
 
+/**
+ * Scan the leading strong-directional character to decide whether the
+ * translation should sweep right-to-left. The main line's reading order
+ * is not enough: a Latin or CJK line can carry an Arabic or Hebrew
+ * translation, and vice versa.
+ */
+private fun isRtlText(text: CharSequence): Boolean {
+    for (ch in text) {
+        val c = ch.code
+        when {
+            c in 0x0590..0x05FF -> return true  // Hebrew
+            c in 0x0600..0x06FF -> return true  // Arabic
+            c in 0x0700..0x074F -> return true  // Syriac
+            c in 0x0750..0x077F -> return true  // Arabic Supplement
+            c in 0x0780..0x07BF -> return true  // Thaana
+            c in 0x07C0..0x07FF -> return true  // NKo
+            c in 0x08A0..0x08FF -> return true  // Arabic Extended-A
+            c in 0xFB1D..0xFB4F -> return true  // Hebrew presentation
+            c in 0xFB50..0xFDFF -> return true  // Arabic presentation A
+            c in 0xFE70..0xFEFF -> return true  // Arabic presentation B
+            c in 0x10800..0x10FFF -> return true // Ancient RTL scripts
+            c in 'a'.code..'z'.code -> return false
+            c in 'A'.code..'Z'.code -> return false
+            c in 0x3040..0x30FF -> return false // Hiragana / Katakana
+            c in 0x4E00..0x9FFF -> return false // CJK Unified
+            c in 0xAC00..0xD7AF -> return false // Hangul
+        }
+    }
+    return false
+}
+
 @Composable
 internal fun PreparedLineText(
     prepared: PreparedLine,
@@ -238,9 +269,10 @@ internal fun PreparedLineText(
                         val dimColor = activeColor.copy(alpha = baseAlpha * 0.35f)
                         val brightColor = activeColor.copy(alpha = baseAlpha)
 
-                        val isRtl = prepared.rightAligned
-                        val totalWidth = size.width
-                        val sweepX = totalWidth * lineProgress
+                        // Sweep direction follows the translation text itself,
+                        // not the main line's reading order. A LTR main line
+                        // can carry an Arabic translation (and vice versa).
+                        val isRtl = isRtlText(layout.layoutInput.text.text)
 
                         // Dim base — always drawn so the text keeps its
                         // silhouette while the sweep is still approaching.
@@ -250,27 +282,43 @@ internal fun PreparedLineText(
                             topLeft = Offset(0f, lift),
                         )
 
-                        // Bright overlay clipped to the swept portion.
-                        if (lineProgress > 0f) {
-                            if (isRtl) {
-                                clipRect(
-                                    left = totalWidth - sweepX,
-                                    top = 0f,
-                                    right = totalWidth,
-                                    bottom = size.height,
-                                ) {
-                                    drawText(
-                                        layout,
-                                        color = brightColor,
-                                        topLeft = Offset(0f, lift),
-                                    )
+                        // Distribute the sweep across the wrapped lines by
+                        // their relative pixel widths, so a two-line
+                        // translation reveals one line at a time instead of
+                        // painting both simultaneously.
+                        val lineCount = layout.lineCount
+                        if (lineProgress > 0f && lineCount > 0) {
+                            val lineWidths =
+                                FloatArray(lineCount) { i ->
+                                    (layout.getLineRight(i) - layout.getLineLeft(i))
+                                        .coerceAtLeast(0f)
                                 }
-                            } else {
+                            val totalLineWidth = lineWidths.sum().takeIf { it > 0f } ?: 1f
+                            var cursor = 0f
+                            for (i in 0 until lineCount) {
+                                val windowStart = cursor / totalLineWidth
+                                val windowEnd = (cursor + lineWidths[i]) / totalLineWidth
+                                cursor += lineWidths[i]
+                                val localProgress =
+                                    if (windowEnd > windowStart) {
+                                        ((lineProgress - windowStart) / (windowEnd - windowStart))
+                                            .coerceIn(0f, 1f)
+                                    } else {
+                                        1f
+                                    }
+                                if (localProgress <= 0f) continue
+
+                                val lineLeft = layout.getLineLeft(i)
+                                val lineRight = layout.getLineRight(i)
+                                val swept = (lineRight - lineLeft) * localProgress
+                                val clipStart = if (isRtl) lineRight - swept else lineLeft
+                                val clipEnd = if (isRtl) lineRight else lineLeft + swept
+
                                 clipRect(
-                                    left = 0f,
-                                    top = 0f,
-                                    right = sweepX,
-                                    bottom = size.height,
+                                    left = clipStart,
+                                    top = layout.getLineTop(i),
+                                    right = clipEnd,
+                                    bottom = layout.getLineBottom(i),
                                 ) {
                                     drawText(
                                         layout,
