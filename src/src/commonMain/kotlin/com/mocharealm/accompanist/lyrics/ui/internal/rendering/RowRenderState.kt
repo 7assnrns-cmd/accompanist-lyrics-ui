@@ -46,8 +46,17 @@ internal class RowRenderState(private val row: PreparedRow) {
         val direction = if (rtl) -1f else 1f
         val from = (if (rtl) sweepRight[i] else sweepLeft[i]) -
             if (i == 0) direction * halfFade else 0f
-        val to = (if (rtl) sweepLeft[i] else sweepRight[i]) +
-            if (i == sweepStarts.lastIndex) direction * halfFade else 0f
+        // Extend the sweep of this unit past its own glyph bounds so it reaches
+        // the leading edge of the next unit by the end of this unit's window.
+        // Without this the mask stays on this unit's trailing glyph and then
+        // jumps across the whitespace (or the kerning gap) at the instant the
+        // next unit's window begins — the visual "jump" between romanized
+        // syllables that have wide spacing from their neighbours.
+        val to = if (i == sweepStarts.lastIndex) {
+            (if (rtl) sweepLeft[i] else sweepRight[i]) + direction * halfFade
+        } else {
+            if (rtl) sweepRight[i + 1] else sweepLeft[i + 1]
+        }
         return from + (to - from) * p
     }
 }
