@@ -236,7 +236,18 @@ fun KaraokeLyricsView(
                     Modifier.fillMaxSize()
                         .then(followModifier)
                         .graphicsLayer {
-                            compositingStrategy = CompositingStrategy.Offscreen
+                            // Only allocate an offscreen buffer when the blend
+                            // mode actually requires it. SrcOver composites
+                            // directly. Wrapping the whole lazy list in
+                            // Offscreen forces a full-screen re-rasterisation
+                            // on every frame where any row changes, which is
+                            // what makes karaoke playback expensive.
+                            compositingStrategy =
+                                if (blendMode == BlendMode.SrcOver) {
+                                    CompositingStrategy.Auto
+                                } else {
+                                    CompositingStrategy.Offscreen
+                                }
                             this.blendMode = blendMode
                         }
                         .lyricsEdgeFade(topFade, bottomFade, anchorOffset),
