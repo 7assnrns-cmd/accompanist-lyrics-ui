@@ -92,7 +92,7 @@ internal fun DrawScope.drawPreparedRow(
                         val liftProgress =
                             if (!row.animated) 1f
                             else
-                                ((time.toDouble() - unit.animation.timing.start) / 700f)
+                                ((time.toDouble() - unit.animationStart) / 700f)
                                     .toFloat()
                                     .coerceIn(0f, 1f)
                         val lift =
