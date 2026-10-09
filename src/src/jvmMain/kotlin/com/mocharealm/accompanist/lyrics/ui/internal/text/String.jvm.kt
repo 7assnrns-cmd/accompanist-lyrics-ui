@@ -25,7 +25,7 @@ private val cjkBlocks: Set<Character.UnicodeBlock> by lazy {
         Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E,
         Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F,
         Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H,
+        Character.UnicodeBlock.of(0x31350)  // CJK Unified Ideographs Extension H (Java 15+),
     )
 }
 
@@ -36,7 +36,7 @@ private val arabicBlocks: Set<Character.UnicodeBlock> by lazy {
         Character.UnicodeBlock.ARABIC_EXTENDED_A,
         Character.UnicodeBlock.ARABIC_PRESENTATION_FORMS_A,
         Character.UnicodeBlock.ARABIC_PRESENTATION_FORMS_B,
-        Character.UnicodeBlock.ARABIC_EXTENDED_B,
+        Character.UnicodeBlock.of(0x0870)  // Arabic Extended-B (Java 11+),
     )
 }
 
