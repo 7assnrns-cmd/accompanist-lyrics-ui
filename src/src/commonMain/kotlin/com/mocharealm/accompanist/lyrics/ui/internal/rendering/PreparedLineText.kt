@@ -208,10 +208,77 @@ internal fun PreparedLineText(
                             with(density) { layout.size.height.toDp() },
                         )
                     ) {
+                        // Sweep the translation across the whole line: the
+                        // bright portion follows the playback position from
+                        // the line's start to its end, mirroring what the
+                        // renderer already does for the main lyrics. RTL
+                        // lines sweep from the right edge.
+                        val now = currentTime()
+                        val lineStart = prepared.source.start
+                        val lineEnd =
+                            prepared.source.end.coerceAtLeast(lineStart + 1)
+                        val lineDuration = (lineEnd - lineStart).toFloat()
+                        val lineProgress =
+                            if (lineDuration > 0f) {
+                                ((now - lineStart).toFloat() / lineDuration)
+                                    .coerceIn(0f, 1f)
+                            } else {
+                                1f
+                            }
+
+                        // Rise: matches the main lyrics' lift curve. Starts
+                        // 4px below the settled baseline and rises to 0.
+                        val liftProgress =
+                            ((now - lineStart).toFloat() / 700f).coerceIn(0f, 1f)
+                        val lift = 4f * (1f - liftProgress) * (1f - liftProgress)
+
+                        val baseAlpha =
+                            activeColor.alpha * FocusedRowUnlitAlpha
+                        val dimColor = activeColor.copy(alpha = baseAlpha * 0.35f)
+                        val brightColor = activeColor.copy(alpha = baseAlpha)
+
+                        val isRtl = prepared.rightAligned
+                        val totalWidth = size.width
+                        val sweepX = totalWidth * lineProgress
+
+                        // Dim base — always drawn so the text keeps its
+                        // silhouette while the sweep is still approaching.
                         drawText(
                             layout,
-                            activeColor.copy(alpha = activeColor.alpha * FocusedRowUnlitAlpha),
+                            color = dimColor,
+                            topLeft = Offset(0f, lift),
                         )
+
+                        // Bright overlay clipped to the swept portion.
+                        if (lineProgress > 0f) {
+                            if (isRtl) {
+                                clipRect(
+                                    left = totalWidth - sweepX,
+                                    top = 0f,
+                                    right = totalWidth,
+                                    bottom = size.height,
+                                ) {
+                                    drawText(
+                                        layout,
+                                        color = brightColor,
+                                        topLeft = Offset(0f, lift),
+                                    )
+                                }
+                            } else {
+                                clipRect(
+                                    left = 0f,
+                                    top = 0f,
+                                    right = sweepX,
+                                    bottom = size.height,
+                                ) {
+                                    drawText(
+                                        layout,
+                                        color = brightColor,
+                                        topLeft = Offset(0f, lift),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
