@@ -41,6 +41,8 @@ fun KaraokeLineText(
     showDebugRectangles: Boolean = false,
     showTranslation: Boolean = true,
     showPhonetic: Boolean = true,
+    translationPosition: LyricsCaptionPosition = LyricsCaptionPosition.BELOW,
+    phoneticPosition: LyricsCaptionPosition = LyricsCaptionPosition.ABOVE,
     preparedLine: PreparedLine? = null,
     textMeasurer: TextMeasurer = rememberTextMeasurer(),
     renderProfiles: List<LyricsProfile> = DefaultLyricsProfiles,
@@ -78,6 +80,8 @@ fun KaraokeLineText(
             showTranslation = showTranslation,
             showPhonetic = showPhonetic,
             showDebugRectangles = showDebugRectangles,
+            translationPosition = translationPosition,
+            phoneticPosition = phoneticPosition,
         )
     }
 }

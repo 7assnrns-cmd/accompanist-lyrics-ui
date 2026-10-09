@@ -24,6 +24,7 @@ import com.mocharealm.accompanist.lyrics.ui.internal.diagnostics.lyricsTraceEnab
 import com.mocharealm.accompanist.lyrics.ui.internal.diagnostics.setLyricsTraceCounter
 import com.mocharealm.accompanist.lyrics.ui.internal.playback.LyricsPlaybackState
 import com.mocharealm.accompanist.lyrics.ui.preparation.PreparedLine
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.LyricsCaptionPosition
 
 /**
  * Scan the leading strong-directional character to decide whether the
@@ -67,6 +68,8 @@ internal fun PreparedLineText(
     showTranslation: Boolean = true,
     showPhonetic: Boolean = true,
     showDebugRectangles: Boolean = false,
+    translationPosition: LyricsCaptionPosition = LyricsCaptionPosition.BELOW,
+    phoneticPosition: LyricsCaptionPosition = LyricsCaptionPosition.ABOVE,
 ) {
     val currentTime by rememberUpdatedState(currentTimeProvider)
     val density = LocalDensity.current
@@ -105,6 +108,121 @@ internal fun PreparedLineText(
                 ),
             horizontalAlignment = alignment,
         ) {
+            val renderTranslation: @Composable () -> Unit = {
+                prepared.translation?.let { layout ->
+                    LyricsReveal(showTranslation, keepContent = true) {
+                        Canvas(
+                            Modifier.size(
+                                with(density) { layout.size.width.toDp() },
+                                with(density) { layout.size.height.toDp() },
+                            )
+                        ) {
+                            // Sweep the translation across the whole line: the
+                            // bright portion follows the playback position from
+                            // the line's start to its end, mirroring what the
+                            // renderer already does for the main lyrics. RTL
+                            // lines sweep from the right edge.
+                            val now = currentTime()
+                            val lineStart = prepared.source.start
+                            val lineEnd =
+                                prepared.source.end.coerceAtLeast(lineStart + 1)
+                            val lineDuration = (lineEnd - lineStart).toFloat()
+                            val lineProgress =
+                                if (lineDuration > 0f) {
+                                    ((now - lineStart).toFloat() / lineDuration)
+                                        .coerceIn(0f, 1f)
+                                } else {
+                                    1f
+                                }
+
+                            // Rise: matches the main lyrics' lift curve. Starts
+                            // 4px below the settled baseline and rises to 0.
+                            val liftProgress =
+                                ((now - lineStart).toFloat() / 700f).coerceIn(0f, 1f)
+                            val lift = 4f * (1f - liftProgress) * (1f - liftProgress)
+
+                            val baseAlpha =
+                                activeColor.alpha * FocusedRowUnlitAlpha
+                            val dimColor = activeColor.copy(alpha = baseAlpha * 0.35f)
+                            val brightColor = activeColor.copy(alpha = baseAlpha)
+
+                            // Sweep direction follows the translation text itself,
+                            // not the main line's reading order. A LTR main line
+                            // can carry an Arabic translation (and vice versa).
+                            val isRtl = isRtlText(layout.layoutInput.text.text)
+
+                            // Dim base — always drawn so the text keeps its
+                            // silhouette while the sweep is still approaching.
+                            drawText(
+                                layout,
+                                color = dimColor,
+                                topLeft = Offset(0f, lift),
+                            )
+
+                            // Distribute the sweep across the wrapped lines by
+                            // their relative pixel widths, so a two-line
+                            // translation reveals one line at a time instead of
+                            // painting both simultaneously.
+                            val lineCount = layout.lineCount
+                            if (lineProgress > 0f && lineCount > 0) {
+                                val lineWidths =
+                                    FloatArray(lineCount) { i ->
+                                        (layout.getLineRight(i) - layout.getLineLeft(i))
+                                            .coerceAtLeast(0f)
+                                    }
+                                val totalLineWidth = lineWidths.sum().takeIf { it > 0f } ?: 1f
+                                var cursor = 0f
+                                for (i in 0 until lineCount) {
+                                    val windowStart = cursor / totalLineWidth
+                                    val windowEnd = (cursor + lineWidths[i]) / totalLineWidth
+                                    cursor += lineWidths[i]
+                                    val localProgress =
+                                        if (windowEnd > windowStart) {
+                                            ((lineProgress - windowStart) / (windowEnd - windowStart))
+                                                .coerceIn(0f, 1f)
+                                        } else {
+                                            1f
+                                        }
+                                    if (localProgress <= 0f) continue
+
+                                    val lineLeft = layout.getLineLeft(i)
+                                    val lineRight = layout.getLineRight(i)
+                                    val swept = (lineRight - lineLeft) * localProgress
+                                    val clipStart = if (isRtl) lineRight - swept else lineLeft
+                                    val clipEnd = if (isRtl) lineRight else lineLeft + swept
+
+                                    clipRect(
+                                        left = clipStart,
+                                        top = layout.getLineTop(i),
+                                        right = clipEnd,
+                                        bottom = layout.getLineBottom(i),
+                                    ) {
+                                        drawText(
+                                            layout,
+                                            color = brightColor,
+                                            topLeft = Offset(0f, lift),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            val renderPhonetic: @Composable () -> Unit = {
+                prepared.phonetic?.let { layout ->
+                    LyricsReveal(showPhonetic, keepContent = true) {
+                        Canvas(
+                            Modifier.size(
+                                with(density) { layout.size.width.toDp() },
+                                with(density) { layout.size.height.toDp() },
+                            )
+                        ) {
+                            drawText(layout, paints.phoneticColor)
+                        }
+                    }
+                }
+            }
             for (line in prepared.before) PreparedLineText(
                 line,
                 playback = playback,
@@ -113,7 +231,13 @@ internal fun PreparedLineText(
                 showTranslation = showTranslation,
                 showPhonetic = showPhonetic,
                 showDebugRectangles = showDebugRectangles,
+                translationPosition = translationPosition,
+                phoneticPosition = phoneticPosition,
             )
+
+            // Above captions — translation first, then phonetic.
+            if (translationPosition == LyricsCaptionPosition.ABOVE) renderTranslation()
+            if (phoneticPosition == LyricsCaptionPosition.ABOVE) renderPhonetic()
             // Separate draw scopes mean a ticking row cannot invalidate its static neighbours.
             Column(
                 Modifier.fillMaxWidth(),
@@ -211,15 +335,18 @@ internal fun PreparedLineText(
                     }
                 }
             }
-            if (prepared.translation != null || prepared.phonetic != null) {
+            val shouldShowBelowCaption =
+                (translationPosition == LyricsCaptionPosition.BELOW &&
+                    showTranslation &&
+                    prepared.translation != null) ||
+                    (phoneticPosition == LyricsCaptionPosition.BELOW &&
+                        showPhonetic &&
+                        prepared.phonetic != null)
+            val hasAnyCaption = prepared.translation != null || prepared.phonetic != null
+            if (hasAnyCaption) {
                 val captionGap =
                     animateFloatAsState(
-                        if (
-                            (showTranslation && prepared.translation != null) ||
-                                (showPhonetic && prepared.phonetic != null)
-                        )
-                            8f
-                        else 0f,
+                        if (shouldShowBelowCaption) 8f else 0f,
                         LyricsRevealSpring,
                         label = "captionGap",
                     )
@@ -232,117 +359,10 @@ internal fun PreparedLineText(
                     }
                 )
             }
-            prepared.translation?.let { layout ->
-                LyricsReveal(showTranslation, keepContent = true) {
-                    Canvas(
-                        Modifier.size(
-                            with(density) { layout.size.width.toDp() },
-                            with(density) { layout.size.height.toDp() },
-                        )
-                    ) {
-                        // Sweep the translation across the whole line: the
-                        // bright portion follows the playback position from
-                        // the line's start to its end, mirroring what the
-                        // renderer already does for the main lyrics. RTL
-                        // lines sweep from the right edge.
-                        val now = currentTime()
-                        val lineStart = prepared.source.start
-                        val lineEnd =
-                            prepared.source.end.coerceAtLeast(lineStart + 1)
-                        val lineDuration = (lineEnd - lineStart).toFloat()
-                        val lineProgress =
-                            if (lineDuration > 0f) {
-                                ((now - lineStart).toFloat() / lineDuration)
-                                    .coerceIn(0f, 1f)
-                            } else {
-                                1f
-                            }
 
-                        // Rise: matches the main lyrics' lift curve. Starts
-                        // 4px below the settled baseline and rises to 0.
-                        val liftProgress =
-                            ((now - lineStart).toFloat() / 700f).coerceIn(0f, 1f)
-                        val lift = 4f * (1f - liftProgress) * (1f - liftProgress)
-
-                        val baseAlpha =
-                            activeColor.alpha * FocusedRowUnlitAlpha
-                        val dimColor = activeColor.copy(alpha = baseAlpha * 0.35f)
-                        val brightColor = activeColor.copy(alpha = baseAlpha)
-
-                        // Sweep direction follows the translation text itself,
-                        // not the main line's reading order. A LTR main line
-                        // can carry an Arabic translation (and vice versa).
-                        val isRtl = isRtlText(layout.layoutInput.text.text)
-
-                        // Dim base — always drawn so the text keeps its
-                        // silhouette while the sweep is still approaching.
-                        drawText(
-                            layout,
-                            color = dimColor,
-                            topLeft = Offset(0f, lift),
-                        )
-
-                        // Distribute the sweep across the wrapped lines by
-                        // their relative pixel widths, so a two-line
-                        // translation reveals one line at a time instead of
-                        // painting both simultaneously.
-                        val lineCount = layout.lineCount
-                        if (lineProgress > 0f && lineCount > 0) {
-                            val lineWidths =
-                                FloatArray(lineCount) { i ->
-                                    (layout.getLineRight(i) - layout.getLineLeft(i))
-                                        .coerceAtLeast(0f)
-                                }
-                            val totalLineWidth = lineWidths.sum().takeIf { it > 0f } ?: 1f
-                            var cursor = 0f
-                            for (i in 0 until lineCount) {
-                                val windowStart = cursor / totalLineWidth
-                                val windowEnd = (cursor + lineWidths[i]) / totalLineWidth
-                                cursor += lineWidths[i]
-                                val localProgress =
-                                    if (windowEnd > windowStart) {
-                                        ((lineProgress - windowStart) / (windowEnd - windowStart))
-                                            .coerceIn(0f, 1f)
-                                    } else {
-                                        1f
-                                    }
-                                if (localProgress <= 0f) continue
-
-                                val lineLeft = layout.getLineLeft(i)
-                                val lineRight = layout.getLineRight(i)
-                                val swept = (lineRight - lineLeft) * localProgress
-                                val clipStart = if (isRtl) lineRight - swept else lineLeft
-                                val clipEnd = if (isRtl) lineRight else lineLeft + swept
-
-                                clipRect(
-                                    left = clipStart,
-                                    top = layout.getLineTop(i),
-                                    right = clipEnd,
-                                    bottom = layout.getLineBottom(i),
-                                ) {
-                                    drawText(
-                                        layout,
-                                        color = brightColor,
-                                        topLeft = Offset(0f, lift),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            prepared.phonetic?.let { layout ->
-                LyricsReveal(showPhonetic, keepContent = true) {
-                    Canvas(
-                        Modifier.size(
-                            with(density) { layout.size.width.toDp() },
-                            with(density) { layout.size.height.toDp() },
-                        )
-                    ) {
-                        drawText(layout, paints.phoneticColor)
-                    }
-                }
-            }
+            // Below captions — phonetic first, then translation.
+            if (phoneticPosition == LyricsCaptionPosition.BELOW) renderPhonetic()
+            if (translationPosition == LyricsCaptionPosition.BELOW) renderTranslation()
             for (line in prepared.after) PreparedLineText(
                 line,
                 playback = playback,
@@ -351,6 +371,8 @@ internal fun PreparedLineText(
                 showTranslation = showTranslation,
                 showPhonetic = showPhonetic,
                 showDebugRectangles = showDebugRectangles,
+                translationPosition = translationPosition,
+                phoneticPosition = phoneticPosition,
             )
         }
     }

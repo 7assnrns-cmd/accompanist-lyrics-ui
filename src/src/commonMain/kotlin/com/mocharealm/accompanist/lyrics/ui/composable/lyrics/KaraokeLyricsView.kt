@@ -91,6 +91,8 @@ fun KaraokeLyricsView(
     useBlurEffect: Boolean = true,
     showTranslation: Boolean = true,
     showPhonetic: Boolean = true,
+    translationPosition: LyricsCaptionPosition = LyricsCaptionPosition.BELOW,
+    phoneticPosition: LyricsCaptionPosition = LyricsCaptionPosition.ABOVE,
     anchor: LyricsAnchor = LyricsAnchor.Fixed(64.dp),
     topFade: LyricsFade = LyricsFade.ToAnchor(16.dp),
     bottomFade: LyricsFade = LyricsFade.Fraction(0.5f),
@@ -323,6 +325,8 @@ fun KaraokeLyricsView(
                                         else Modifier,
                                     showTranslation = showTranslation,
                                     showPhonetic = showPhonetic,
+                                    translationPosition = translationPosition,
+                                    phoneticPosition = phoneticPosition,
                                     showDebugRectangles = showDebugRectangles,
                                 )
                         }
