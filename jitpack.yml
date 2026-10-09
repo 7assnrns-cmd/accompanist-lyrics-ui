@@ -1,0 +1,15 @@
+# JitPack build configuration.
+#
+# The library is a Kotlin Multiplatform project and requires JDK 17+.
+# JitPack's default JDK is 8, which Gradle rejects. Pinning the JDK
+# via the `jdk` key tells JitPack to bootstrap the build with Java 17.
+#
+# The publish task is scoped to the `:src` module — the sample and
+# benchmark modules are not meant to be consumed by other projects
+# and would fail to publish to a Maven repository.
+
+jdk:
+  - openjdk17
+
+install:
+  - ./gradlew :src:publishToMavenLocal -x test -x check
