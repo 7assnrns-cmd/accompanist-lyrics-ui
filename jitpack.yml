@@ -1,15 +1,16 @@
 # JitPack build configuration.
 #
-# The library is a Kotlin Multiplatform project and requires JDK 17+.
-# JitPack's default JDK is 8, which Gradle rejects. Pinning the JDK
-# via the `jdk` key tells JitPack to bootstrap the build with Java 17.
+# - jdk: openjdk17 — Gradle 9.5 requires JDK 17+, and the project's
+#   JVM target uses Character.UnicodeBlock constants that were added
+#   in Java 11 and 15. JDK 17 has both.
 #
-# The publish task is scoped to the `:src` module — the sample and
-# benchmark modules are not meant to be consumed by other projects
-# and would fail to publish to a Maven repository.
+# - -PciPackaging=true — disables signAllPublications() in
+#   src/build.gradle.kts. JitPack has no signing key, and the
+#   publication task fails with "no configured signatory" without
+#   this flag.
 
 jdk:
   - openjdk17
 
 install:
-  - ./gradlew :src:publishToMavenLocal -x test -x check
+  - ./gradlew :src:publishToMavenLocal -x test -x check -PciPackaging=true

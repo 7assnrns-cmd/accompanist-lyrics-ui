@@ -56,7 +56,21 @@ kotlin {
             }
         }
     }
-    jvm()
+    jvm {
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    // Character.UnicodeBlock.ARABIC_EXTENDED_B (Java 11)
+                    // and CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H (Java 15)
+                    // are used in String.jvm.kt. The default JVM target
+                    // for the jvm() target is 1.8, which hides them and
+                    // causes an unresolved reference. Match the Android
+                    // target's jvmTarget here.
+                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+                }
+            }
+        }
+    }
 
     // Local cross compilation is opt-in; ordinary Windows/Linux builds keep their existing targets.
     if (System.getProperty("os.name") == "Mac OS X" ||
